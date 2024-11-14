@@ -2,22 +2,13 @@ import os
 
 import sys
 
-# Dynamically get the directory of the current script
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Append the pipeline scripts directory to sys.path
-sys.path.append(os.path.join(current_dir, 'pipeline', 'scripts'))
-
-print("Current working directory:", os.getcwd())
-print("Current directory:", current_dir)
-
 import pandas as pd
 import matplotlib
 
 from pyairtable import Api
 from dotenv import load_dotenv
 
-from scripts.pipeline_utils import save_csv, get_table,airtable_to_df,response_to_df,run_report, main,retrieve_submissions_data
+from pipeline.scripts.pipeline_utils import save_csv, get_table,airtable_to_df,response_to_df,run_report, main,retrieve_submissions_data, convert_to_dataframe
 
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import (
@@ -30,6 +21,7 @@ from google.analytics.data_v1beta.types import (
 import os.path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -119,20 +111,23 @@ class data_pipeline():
         else:
             raise ValueError("Unsupported file format. Please provide a .json or .csv file.")
 
-    def get_airtable_data(self):
+    def get_airtable_data(self, cached_data=False):
+
+        if cached_data:
+            return self.load_data('airtable_data.json') 
 
         if self.use_cached_data:
             return self.load_data('airtable_data.json')
         
         api = Api(os.environ['AIRTABLE_API_KEY'])
 
-        submissions_records = get_table(api,os.environ['baseID'], os.environ['tableID'])
+        submissions_records = get_table(api,os.environ['BASEID'], os.environ['TABLEID1'])
         submissions_records_df = airtable_to_df(submissions_records)
 
-        contributor_records = get_table(api,os.environ['baseID'], os.environ['tableID'])
+        contributor_records = get_table(api,os.environ['BASEID'], os.environ['TABLEID2'])
         contributor_records_df = airtable_to_df(contributor_records)
 
-        project_records = get_table(api,os.environ['baseID'], os.environ['tableID'])
+        project_records = get_table(api,os.environ['BASEID'], os.environ['TABLEID3'])
         project_records_df = airtable_to_df(project_records)
 
         data_struct = {
@@ -147,7 +142,10 @@ class data_pipeline():
 
         return data_struct
     
-    def get_google_analytics_data(self):
+    def get_google_analytics_data(self, cached_data=False):
+
+        if cached_data:
+            return self.load_data('google_analytics.json')
 
         if self.use_cached_data:
             return self.load_data('google_analytics.json')
@@ -187,6 +185,8 @@ class data_pipeline():
 
         views_at = run_report(property_id,dimension='unifiedScreenClass',metric='screenPageViews')
 
+        new_v_return_timeseries = run_report(property_id,dimension="date",metric="newUsers")
+
         data_struct = {
             "cities": cities,
             "users_timeseries": users_timeseries,
@@ -200,7 +200,8 @@ class data_pipeline():
             "source_at":source_at,
             "views_7d":views_7d,
             "views_28d":views_28d,
-            "views_at":views_at
+            "views_at":views_at,
+            "new_v_return_timeseries":new_v_return_timeseries
         }
 
         self.save_data(data_struct,'google_analytics.json')
@@ -209,14 +210,13 @@ class data_pipeline():
 
         return data_struct
 
-    def get_sheets_data(self):
+    def get_sheets_data(self, cached_data=False):
 
+        if cached_data:
+            return self.load_data('google_sheets.json')
+        
         SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
         SCOPES = [os.getenv('SCOPES')]
-        token_path = os.getenv('token_path')
-        creds_path = os.getenv('creds_path')
-
-        print(f'token_path: {token_path}')
 
         if self.use_cached_data:
             return self.load_data('google_sheets.json')
@@ -224,36 +224,26 @@ class data_pipeline():
         # Google Sheets API; includes Ghost NL Data
         log_df = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
-                      token_path=token_path,
-                      creds_path=creds_path,
                       SHEET_NAME="Issue Log Data",
                       skip_first_row=True)
         
         subscriber_df = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
-                      token_path=token_path,
-                      creds_path=creds_path,
                       SHEET_NAME='Subscriber CSV',
                       skip_first_row=False)
         
         issue_df = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
-                      token_path=token_path,
-                      creds_path=creds_path,
                       SHEET_NAME='Issue CSV',
                       skip_first_row=False)
 
         ON_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
-                      token_path=token_path,
-                      creds_path=creds_path,
                       SHEET_NAME='Twitter CSV',
                       skip_first_row=False)
         
         Spencer_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
-                      token_path=token_path,
-                      creds_path=creds_path,
                       SHEET_NAME='Spencer Twitter CSV',
                       skip_first_row=False)
         
@@ -279,10 +269,11 @@ class data_pipeline():
 
         return data_struct
     
-    def get_twitter_data(self):
+    def get_twitter_data(self, cached_data=False):
         # For now we get from local folder
 
-        if self.twitter_data is None:
+        if cached_data:
+
             sheets = self.load_data('google_sheets.json')
             ON_twitter = sheets['ON_twitter']
             Spencer_twitter = sheets['Spencer_twitter']
@@ -290,12 +281,29 @@ class data_pipeline():
             twitter_data = {
             "ON_twitter":ON_twitter,
             "Spencer_twitter":Spencer_twitter
-        }
-            
-            self.twitter_data = twitter_data
-            
+            }
         
-        return self.twitter_data
+        else:
+
+            SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+            SCOPES = [os.getenv('SCOPES')]
+
+            ON_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
+                        SCOPES=SCOPES,
+                        SHEET_NAME='Twitter CSV',
+                        skip_first_row=False)
+            
+            Spencer_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
+                        SCOPES=SCOPES,
+                        SHEET_NAME='Spencer Twitter CSV',
+                        skip_first_row=False)
+            
+            twitter_data = {
+                "ON_twitter":ON_twitter,
+                "Spencer_twitter":Spencer_twitter
+            }
+
+        return twitter_data
     
     def get_substack_data(self,path1,
                           path2):
@@ -321,8 +329,6 @@ class data_pipeline():
         return submissions
 
 
-
-        
 
 
 

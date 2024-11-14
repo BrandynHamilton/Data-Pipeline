@@ -4,6 +4,7 @@ import matplotlib
 
 import requests
 from IPython.display import Image, display
+import json
 
 from pyairtable import Api
 from dotenv import load_dotenv
@@ -16,6 +17,8 @@ from google.analytics.data_v1beta.types import (
     RunReportRequest,
 )
 
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+
 import os.path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -25,6 +28,8 @@ from googleapiclient.errors import HttpError
 
 import datetime as dt
 from datetime import timedelta
+
+load_dotenv()
 
 def save_csv(df, name):
     path = f'../data/{name}.csv'
@@ -68,34 +73,40 @@ def response_to_df(response):
     
     return df
 
-def run_report(property_id,dimension=None,metric=None, start_date='2022-01-01',end_date='today'):
-    """Runs a simple report on a Google Analytics 4 property."""
-    # TODO(developer): Uncomment this variable and replace with your
-    #  Google Analytics 4 property ID before running the sample.
-    # property_id = "YOUR-GA4-PROPERTY-ID"
+def run_report(property_id, dimension=None, metric=None, start_date='2022-01-01', end_date='today'):
+    """Runs a report on a Google Analytics 4 property using direct credentials."""
+    
+    # Get credentials JSON from environment variable
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS")
+    
+    if not credentials_json:
+        raise ValueError("GOOGLE_CREDENTIALS environment variable not found.")
+    
+    # Parse credentials JSON and create a ServiceAccountCredentials object
+    credentials_info = json.loads(credentials_json)
+    creds = ServiceAccountCredentials.from_service_account_info(credentials_info)
+    
+    # Initialize the BetaAnalyticsDataClient with the credentials
+    client = BetaAnalyticsDataClient(credentials=creds)
 
-    # Using a default constructor instructs the client to use the credentials
-    # specified in GOOGLE_APPLICATION_CREDENTIALS environment variable.
-    client = BetaAnalyticsDataClient()
-
+    # Build the report request
     request = RunReportRequest(
         property=f"properties/{property_id}",
-        dimensions=[
-            Dimension(name=dimension),
-        ],
-        metrics=[
-            Metric(name=metric),
-        ],
+        dimensions=[Dimension(name=dimension)],
+        metrics=[Metric(name=metric)],
         date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
-)
+    )
 
+    # Run the report
     response = client.run_report(request)
 
+    # Check if the response has data
     if len(response.rows) == 0:
         print("No data found in the API response.")
     else:
         print("Data found:", response.rows)
 
+    # Convert the response to DataFrame (assuming `response_to_df` is defined)
     df = response_to_df(response)
 
     return df
@@ -176,70 +187,6 @@ def download_file(url, directory, filename):
     else:
         print(f"Failed to download {filename}. Status code: {response.status_code}")
 
-def main(SPREADSHEET_ID, SHEET_NAME,SCOPES,token_path,creds_path,skip_first_row=False):
-    """Retrieves and prints the entire table from a specific sheet in Google Sheets."""
-    creds = None
-
-    token_path = os.path.join("config", f"{token_path}")
-
-    creds_path = os.path.join("config", f"{creds_path}")
-
-
-    print(f'token_path: {token_path}')
-    print(f'scopes: {SCOPES}')
-    print(f'spreadsheet:{SPREADSHEET_ID}')
-
-    # if os.path.exists(token_path):
-    #     creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    # if not creds or not creds.valid:
-    #     if creds and creds.expired and creds.refresh_token:
-    #         creds.refresh(Request())
-    #     else:
-    #         flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
-    #         creds = flow.run_local_server(port=0)
-    #     with open(token_path, "w") as token:
-    #         token.write(creds.to_json())
-
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
-
-    try:
-        service = build("sheets", "v4", credentials=creds)
-
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID, range=f"'{SHEET_NAME}'!A1:Z"
-        ).execute()
-
-        values = result.get("values", [])
-
-        if not values:
-            print("No data found.")
-            return
-
-        # Print the entire table from the specific sheet
-        print("Retrieved table data from the specified sheet:")
-        for row in values:
-            print(row)
-
-        # Convert the values to a DataFrame
-        df = convert_to_dataframe(values,skip_first_row=skip_first_row)
-        if df is not None:
-            print("Converted DataFrame:")
-            print(df.head())  # Display the first few rows of the DataFrame
-
-            return df
-
-    except HttpError as err:
-        print(f"An error occurred: {err}")
-
 def convert_to_dataframe(values, skip_first_row=False):
     if not values or len(values) < 3:  # Check for at least 3 rows (1 header + 1 data row)
         print("Not enough data to convert to DataFrame.")
@@ -276,3 +223,133 @@ def convert_to_dataframe(values, skip_first_row=False):
     df = df.dropna(how='all')  # Drop rows where all elements are NaN
 
     return df
+
+def get_submission_df(submissions_data, submission_num, submission_directory):
+    # Get the submission data
+    try:
+        submission = submissions_data[submission_num]
+    except IndexError:
+        raise ValueError("Submission number is out of range.")
+
+    # Initialize dictionaries to store DataFrames and images
+    project = submission['project']
+    data_struct = {}
+    images = {}
+
+    # Loop through CSVs and corresponding images
+    for i in range(1, 4):  # Assuming 'csv_1', 'csv_2', 'csv_3' and 'image_1', 'image_2', 'image_3'
+        csv_key = f'csv_{i}'
+        img_key = f'image_{i}'
+
+        # Load CSV or Excel based on the file extension
+        csv_filename = submission['data'].get(csv_key)
+        if csv_filename:
+            csv_path = os.path.join(submission_directory, csv_filename)
+            try:
+                # Check if the file is an Excel file
+                if csv_filename.endswith('.xlsx') or csv_filename.endswith('.xls'):
+                    df = pd.read_excel(csv_path)
+                else:
+                    df = pd.read_csv(csv_path)
+                data_struct[csv_filename] = df
+            except FileNotFoundError:
+                print(f"Warning: File {csv_path} not found.")
+            except pd.errors.EmptyDataError:
+                print(f"Warning: File {csv_path} is empty.")
+            except UnicodeDecodeError:
+                print(f"Error: {csv_path} contains invalid encoding.")
+            except Exception as e:
+                print(f"Error loading {csv_path}: {e}")
+
+        # Get image URL
+        img_url = submission['image'].get(img_key)
+        if img_url:
+            images[img_key] = img_url
+
+    file_names = list(data_struct.keys())
+    image_values = list(images.values())
+
+    submission = {
+        "project": project,
+        "file_names": file_names,
+        "image_urls": image_values
+    }
+
+    return submission
+
+
+def show_file_and_img(submission,index=0):
+    # Show the file and image
+    for key in submission.keys():
+        if key == 'project':
+            print(f"Project: {submission[key]}")
+        if key == 'file_names':
+            print(f"File Name: {submission[key][index]}")
+        elif key == 'image_urls':
+            display(Image(url=submission[key][index]))
+
+def get_files(submission):
+    keys_list = list(submission['file_names'])
+
+    # Accessing the keys
+    first_key = keys_list[0] if len(keys_list) > 0 else None
+    second_key = keys_list[1] if len(keys_list) > 1 else None
+    third_key = keys_list[2] if len(keys_list) > 2 else None
+
+    files = {
+        'first_file': first_key if first_key else None,
+        'second_file': second_key if second_key else None,
+        'third_file': third_key if third_key else None,
+    }
+
+    return files
+
+def main(SPREADSHEET_ID, SHEET_NAME, SCOPES, skip_first_row=False):
+    """Retrieves and prints the entire table from a specific sheet in Google Sheets."""
+    
+    creds = None
+    
+    # Load token and credentials from environment variables
+    token_json = os.getenv("GOOGLE_SHEETS_TOKEN")
+    creds_json = os.getenv("GOOGLE_SHEETS_CRED")
+
+    print(f'token_json: {token_json}')
+    print(f'creds_json: {creds_json}')
+
+    if token_json:
+        # Load user token directly from environment variable
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+    elif creds_json:
+        # Load service account credentials directly from environment variable
+        creds = ServiceAccountCredentials.from_service_account_info(json.loads(creds_json), scopes=SCOPES)
+
+    # Refresh the token if expired
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    elif not creds:
+        print("No valid credentials available.")
+        return
+
+    try:
+        service = build("sheets", "v4", credentials=creds)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID, range=f"'{SHEET_NAME}'!A1:Z"
+        ).execute()
+
+        values = result.get("values", [])
+        if not values:
+            print("No data found.")
+            return
+
+        print("Retrieved table data from the specified sheet:")
+        for row in values:
+            print(row)
+
+        df = convert_to_dataframe(values, skip_first_row=skip_first_row)
+        if df is not None:
+            print("Converted DataFrame:")
+            print(df.head())
+            return df
+
+    except HttpError as err:
+        print(f"An error occurred: {err}")
