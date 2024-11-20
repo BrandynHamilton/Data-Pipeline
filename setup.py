@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="modular_pipeline",
-    version="0.1.5",
+    version="0.1.6",
     description="A library for building modular pipelines in Python",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

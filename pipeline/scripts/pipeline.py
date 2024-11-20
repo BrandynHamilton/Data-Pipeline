@@ -187,6 +187,14 @@ class data_pipeline():
 
         new_v_return_timeseries = run_report(property_id,dimension="date",metric="newUsers")
 
+        source_sessions_at = run_report(property_id,dimension='Sessionsource',metric='active28DayUsers')
+
+        source_sessions_28d = run_report(property_id,dimension='Sessionsource',metric='activeUsers',start_date=twenty_eight_days)
+
+        source_campaign_7d = run_report(property_id,dimension='sessionCampaignName',metric='active7DayUsers',start_date=today)
+
+        source_campaign_28d = run_report(property_id,dimension='sessionCampaignName',metric='active28DayUsers',start_date=today)
+
         data_struct = {
             "cities": cities,
             "users_timeseries": users_timeseries,
@@ -201,7 +209,11 @@ class data_pipeline():
             "views_7d":views_7d,
             "views_28d":views_28d,
             "views_at":views_at,
-            "new_v_return_timeseries":new_v_return_timeseries
+            "new_v_return_timeseries":new_v_return_timeseries,
+            "source_sessions_at":source_sessions_at,
+            "source_sessions_28d":source_sessions_28d,
+            "source_campaign_28d":source_campaign_28d,
+            "source_campaign_7d":source_campaign_7d
         }
 
         self.save_data(data_struct,'google_analytics.json')
