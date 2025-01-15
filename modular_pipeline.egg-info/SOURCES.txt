@@ -9,6 +9,7 @@ modular_pipeline.egg-info/not-zip-safe
 modular_pipeline.egg-info/requires.txt
 modular_pipeline.egg-info/top_level.txt
 pipeline/__init__.py
+pipeline/__pycache__/__init__.cpython-311.pyc
 pipeline/scripts/__init__.py
 pipeline/scripts/pipeline.py
 pipeline/scripts/pipeline_utils.py

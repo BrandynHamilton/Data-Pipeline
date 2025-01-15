@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="modular_pipeline",
-    version="0.1.6",
+    version="0.2.0",
     description="A library for building modular pipelines in Python",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -16,7 +16,7 @@ setup(
         "numpy",
         "plotly",
         "kaleido",
-        "pyairtable",
+        "pyairtable==2.3.5",
         "python-dotenv",
         "google-analytics-data",
         "google-auth-oauthlib",

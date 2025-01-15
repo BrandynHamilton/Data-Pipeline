@@ -2,7 +2,7 @@ pandas
 numpy
 plotly
 kaleido
-pyairtable
+pyairtable==2.3.5
 python-dotenv
 google-analytics-data
 google-auth-oauthlib

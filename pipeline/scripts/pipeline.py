@@ -251,7 +251,7 @@ class data_pipeline():
 
         ON_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
-                      SHEET_NAME='Twitter CSV',
+                      SHEET_NAME='ON Twitter CSV',
                       skip_first_row=False)
         
         Spencer_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
@@ -259,17 +259,24 @@ class data_pipeline():
                       SHEET_NAME='Spencer Twitter CSV',
                       skip_first_row=False)
         
+        per_tweet = main(SPREADSHEET_ID=SPREADSHEET_ID,
+                            SCOPES=SCOPES,
+                            SHEET_NAME='ON Per Tweet CSV',
+                            skip_first_row=False)
+        
         data_struct = {
             "log_df":log_df,
             "subscriber_df":subscriber_df,
             "issue_df":issue_df,
             "ON_twitter":ON_twitter,
-            "Spencer_twitter":Spencer_twitter
+            "Spencer_twitter":Spencer_twitter,
+            'per_tweet':per_tweet
         }
 
         twitter_data = {
             "ON_twitter":ON_twitter,
-            "Spencer_twitter":Spencer_twitter
+            "Spencer_twitter":Spencer_twitter,
+            'per_tweet':per_tweet
         }
 
         for key in data_struct.keys():
@@ -302,7 +309,7 @@ class data_pipeline():
 
             ON_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
                         SCOPES=SCOPES,
-                        SHEET_NAME='Twitter CSV',
+                        SHEET_NAME='ON Twitter CSV',
                         skip_first_row=False)
             
             Spencer_twitter = main(SPREADSHEET_ID=SPREADSHEET_ID,
@@ -310,9 +317,15 @@ class data_pipeline():
                         SHEET_NAME='Spencer Twitter CSV',
                         skip_first_row=False)
             
+            per_tweet = main(SPREADSHEET_ID=SPREADSHEET_ID,
+                            SCOPES=SCOPES,
+                            SHEET_NAME='ON Per Tweet CSV',
+                            skip_first_row=False)
+            
             twitter_data = {
                 "ON_twitter":ON_twitter,
-                "Spencer_twitter":Spencer_twitter
+                "Spencer_twitter":Spencer_twitter,
+                'per_tweet':per_tweet
             }
 
         return twitter_data

@@ -6,7 +6,6 @@ import requests
 from IPython.display import Image, display
 import json
 
-from pyairtable import Api
 from dotenv import load_dotenv
 
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
@@ -313,8 +312,8 @@ def main(SPREADSHEET_ID, SHEET_NAME, SCOPES, skip_first_row=False):
     token_json = os.getenv("GOOGLE_SHEETS_TOKEN")
     creds_json = os.getenv("GOOGLE_SHEETS_CRED")
 
-    print(f'token_json: {token_json}')
-    print(f'creds_json: {creds_json}')
+    # print(f'token_json: {token_json}')
+    # print(f'creds_json: {creds_json}')
 
     if token_json:
         # Load user token directly from environment variable
