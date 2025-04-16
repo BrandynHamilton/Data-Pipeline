@@ -264,13 +264,19 @@ class data_pipeline():
                             SHEET_NAME='ON Per Tweet CSV',
                             skip_first_row=False)
         
+        substack = main(SPREADSHEET_ID=SPREADSHEET_ID,
+                            SCOPES=SCOPES,
+                            SHEET_NAME='Substack Subs',
+                            skip_first_row=False)
+        
         data_struct = {
             "log_df":log_df,
             "subscriber_df":subscriber_df,
             "issue_df":issue_df,
             "ON_twitter":ON_twitter,
             "Spencer_twitter":Spencer_twitter,
-            'per_tweet':per_tweet
+            'per_tweet':per_tweet,
+            'substack': substack
         }
 
         twitter_data = {

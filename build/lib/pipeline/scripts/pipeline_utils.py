@@ -111,61 +111,52 @@ def run_report(property_id, dimension=None, metric=None, start_date='2022-01-01'
     return df
 
 def retrieve_submissions_data(submissions_records_df, start_date, end_date, submission_directory):
-    # Select relevant columns and drop rows with all NaN values in the CSV columns
-    csvs = submissions_records_df[['id', 'Project','Created', 'Image #1', 'Image #2', 'Image #3', 
-                                    'Image 1 CSV File', 'Image 2 CSV File', 'Image 3 CSV File']].dropna(
-        subset=['Image 1 CSV File', 'Image 2 CSV File', 'Image 3 CSV File'], how='all')
-    print(f'test')
+    # Select relevant columns
+    image_columns = [col for col in submissions_records_df.columns if 'Image #' in col]
+    csv_columns = [col for col in submissions_records_df.columns if 'CSV File' in col]
+
+    # Drop rows where all CSVs are NaN
+    csvs = submissions_records_df[['id', 'Project', 'Created'] + image_columns + csv_columns].dropna(
+        subset=csv_columns, how='all')
+
     # Convert 'Created' to datetime and filter the DataFrame
     csvs['Created'] = pd.to_datetime(csvs['Created'])
-    csvs.sort_values(by='Created', ascending=False, inplace=True)
-
     csvs_filtered = csvs[(csvs['Created'] >= start_date) & (csvs['Created'] <= end_date)]
-
-    # Create a list to hold the structured data
+    
     submissions_data = []
 
     for _, row in csvs_filtered.iterrows():
-        # Prepare image and CSV data
         images = {}
         csv_files = {}
 
-        for i in range(1, 4):
-            # Access images
-            image_key = f'Image #{i}'
-            image_info = row[image_key]
+        # Dynamically extract all images
+        for col in image_columns:
+            image_info = row[col]
+            if isinstance(image_info, list) and image_info:  # Ensure it's a list
+                for idx, img in enumerate(image_info):  # Handle multiple images in the list
+                    image_url = img.get('url')
+                    image_filename = img.get('filename')
+                    images[f'image_{col}_{idx+1}'] = image_url
+                    download_file(image_url, submission_directory, image_filename)
 
-            # Check if image_info is a non-empty list
-            if isinstance(image_info, list) and image_info:
-                image_url = image_info[0]['url']  # Extract URL
-                image_filename = image_info[0]['filename']  # Extract filename
-                images[f'image_{i}'] = image_url
-                # Download the image
-                download_file(image_url, submission_directory, image_filename)
+        # Dynamically extract all CSV files
+        for col in csv_columns:
+            csv_info = row[col]
+            if isinstance(csv_info, list) and csv_info:  # Ensure it's a list
+                for idx, csv in enumerate(csv_info):  # Handle multiple CSVs in the list
+                    csv_url = csv.get('url')
+                    csv_filename = csv.get('filename')
+                    csv_files[f'csv_{col}_{idx+1}'] = csv_filename
+                    download_file(csv_url, submission_directory, csv_filename)
 
-        for i in range(1, 4):
-            # Access CSV files
-            csv_key = f'Image {i} CSV File'
-            csv_info = row[csv_key]
-
-            # Check if csv_info is a non-empty list
-            if isinstance(csv_info, list) and csv_info:
-                csv_url = csv_info[0]['url']  # Extract URL
-                csv_filename = csv_info[0]['filename']  # Extract filename
-                csv_files[f'csv_{i}'] = csv_filename  # Store the filename instead of the URL
-                # Download the CSV file
-                print(f'csv file: {csv_filename}')
-                download_file(csv_url, submission_directory, csv_filename)
-
-        # Constructing a dictionary for each submission
         submission_dict = {
             'dt': row['Created'],
             'project': row['Project'],
             'id': row['id'],
-            'image': images,
-            'data': csv_files  # This now contains the filenames of the CSV files
+            'images': images,  # Now supports multiple images
+            'data': csv_files   # Now supports multiple CSVs
         }
-        print(f'submission_dict: {submission_dict}')
+
         submissions_data.append(submission_dict)
 
     return submissions_data
@@ -224,84 +215,52 @@ def convert_to_dataframe(values, skip_first_row=False):
     return df
 
 def get_submission_df(submissions_data, submission_num, submission_directory):
-    # Get the submission data
     try:
         submission = submissions_data[submission_num]
     except IndexError:
         raise ValueError("Submission number is out of range.")
 
-    # Initialize dictionaries to store DataFrames and images
     project = submission['project']
     data_struct = {}
     images = {}
 
-    # Loop through CSVs and corresponding images
-    for i in range(1, 4):  # Assuming 'csv_1', 'csv_2', 'csv_3' and 'image_1', 'image_2', 'image_3'
-        csv_key = f'csv_{i}'
-        img_key = f'image_{i}'
+    # Load all CSV files dynamically
+    for csv_key, csv_filename in submission['data'].items():
+        csv_path = os.path.join(submission_directory, csv_filename)
+        try:
+            if csv_filename.endswith('.xlsx') or csv_filename.endswith('.xls'):
+                df = pd.read_excel(csv_path)
+            else:
+                df = pd.read_csv(csv_path)
+            data_struct[csv_filename] = df
+        except Exception as e:
+            print(f"Error loading {csv_path}: {e}")
 
-        # Load CSV or Excel based on the file extension
-        csv_filename = submission['data'].get(csv_key)
-        if csv_filename:
-            csv_path = os.path.join(submission_directory, csv_filename)
-            try:
-                # Check if the file is an Excel file
-                if csv_filename.endswith('.xlsx') or csv_filename.endswith('.xls'):
-                    df = pd.read_excel(csv_path)
-                else:
-                    df = pd.read_csv(csv_path)
-                data_struct[csv_filename] = df
-            except FileNotFoundError:
-                print(f"Warning: File {csv_path} not found.")
-            except pd.errors.EmptyDataError:
-                print(f"Warning: File {csv_path} is empty.")
-            except UnicodeDecodeError:
-                print(f"Error: {csv_path} contains invalid encoding.")
-            except Exception as e:
-                print(f"Error loading {csv_path}: {e}")
+    # Store image URLs dynamically
+    images = submission['images']
 
-        # Get image URL
-        img_url = submission['image'].get(img_key)
-        if img_url:
-            images[img_key] = img_url
-
-    file_names = list(data_struct.keys())
-    image_values = list(images.values())
-
-    submission = {
+    return {
         "project": project,
-        "file_names": file_names,
-        "image_urls": image_values
+        "file_names": list(data_struct.keys()),
+        "image_urls": list(images.values())
     }
 
-    return submission
 
 
-def show_file_and_img(submission,index=0):
-    # Show the file and image
-    for key in submission.keys():
-        if key == 'project':
-            print(f"Project: {submission[key]}")
-        if key == 'file_names':
-            print(f"File Name: {submission[key][index]}")
-        elif key == 'image_urls':
-            display(Image(url=submission[key][index]))
+def show_file_and_img(submission):
+    print(f"Project: {submission['project']}")
+    
+    # Display all file names
+    for file_name in submission['file_names']:
+        print(f"File: {file_name}")
+
+    # Display all images
+    for img_url in submission['image_urls']:
+        display(Image(url=img_url))
+
 
 def get_files(submission):
-    keys_list = list(submission['file_names'])
-
-    # Accessing the keys
-    first_key = keys_list[0] if len(keys_list) > 0 else None
-    second_key = keys_list[1] if len(keys_list) > 1 else None
-    third_key = keys_list[2] if len(keys_list) > 2 else None
-
-    files = {
-        'first_file': first_key if first_key else None,
-        'second_file': second_key if second_key else None,
-        'third_file': third_key if third_key else None,
-    }
-
-    return files
+    return {"files": submission["file_names"]}
 
 def main(SPREADSHEET_ID, SHEET_NAME, SCOPES, skip_first_row=False):
     """Retrieves and prints the entire table from a specific sheet in Google Sheets."""

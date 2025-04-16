@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: modular_pipeline
-Version: 0.2.0
+Version: 0.2.1
 Summary: A library for building modular pipelines in Python
 Home-page: https://github.com/BrandynHamilton/Data-Pipeline
 Author: Brandyn Hamilton

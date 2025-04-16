@@ -37,6 +37,7 @@ class data_pipeline():
     def __init__(self,submission_directory,
                  save_directory, use_cached_data=False):
         self.submission_records = None
+        self.substack_data = None
         self.use_cached_data = use_cached_data
         
         # Get the current working directory
@@ -63,33 +64,37 @@ class data_pipeline():
 
         # Set the directory to 'pipeline/data/cleaned/'
         directory = self.save_directory
-        
-        # Ensure the directory exists
+
         if not os.path.exists(directory):
-            os.makedirs(directory)  # Create the directory if it doesn't exist
+            os.makedirs(directory)
 
-        # Set the full file path
         path = os.path.join(directory, file)
-
         print(f'path: {path}')
 
-        # Handle saving to JSON format
         if file.endswith('.json'):
             if isinstance(data_struct, dict):
-                # Convert each DataFrame to a JSON-compatible format
-                json_data_struct = {key: df.to_dict(orient='records') for key, df in data_struct.items()}
+                # Log any None values for debug visibility
+                for key, df in data_struct.items():
+                    if df is None:
+                        print(f"❗ Data for '{key}' is None. Check the corresponding sheet or data source.")
+
+                # Safely convert to JSON-compatible format
+                json_data_struct = {
+                    key: df.to_dict(orient='records') if df is not None else []
+                    for key, df in data_struct.items()
+                }
+
                 with open(path, 'w') as f:
-                    json.dump(json_data_struct, f, indent=4, default=custom_serializer)  # Use custom_serializer here
+                    json.dump(json_data_struct, f, indent=4, default=custom_serializer)
             else:
                 raise ValueError("data_struct must be a dictionary for JSON saving.")
 
-        # Handle saving to CSV format
         elif file.endswith('.csv'):
             if isinstance(data_struct, pd.DataFrame):
                 data_struct.to_csv(path, index=False)
             else:
                 raise ValueError("data_struct must be a DataFrame for CSV saving.")
-            
+
     def load_data(self,file):
         directory = self.save_directory
         path = os.path.join(directory, file)
@@ -241,8 +246,11 @@ class data_pipeline():
         
         subscriber_df = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
-                      SHEET_NAME='Subscriber CSV',
+                      SHEET_NAME='Ghost Subs',
                       skip_first_row=False)
+        
+        print(f'subscriber_df: {subscriber_df}')
+        # import pdb; pdb.set_trace()
         
         issue_df = main(SPREADSHEET_ID=SPREADSHEET_ID,
                       SCOPES=SCOPES,
@@ -264,13 +272,19 @@ class data_pipeline():
                             SHEET_NAME='ON Per Tweet CSV',
                             skip_first_row=False)
         
+        substack = main(SPREADSHEET_ID=SPREADSHEET_ID,
+                            SCOPES=SCOPES,
+                            SHEET_NAME='Substack Subs',
+                            skip_first_row=False)
+        
         data_struct = {
             "log_df":log_df,
             "subscriber_df":subscriber_df,
             "issue_df":issue_df,
             "ON_twitter":ON_twitter,
             "Spencer_twitter":Spencer_twitter,
-            'per_tweet':per_tweet
+            'per_tweet':per_tweet,
+            'substack': substack
         }
 
         twitter_data = {
@@ -279,12 +293,17 @@ class data_pipeline():
             'per_tweet':per_tweet
         }
 
+        print(f'data_struct: {data_struct}')
+
+        # import pdb; pdb.set_trace()
+
         for key in data_struct.keys():
             print(data_struct[key])
 
         self.save_data(data_struct,'google_sheets.json')
 
         self.twitter_data = twitter_data
+        self.substack_data = substack
 
         return data_struct
     
@@ -330,17 +349,36 @@ class data_pipeline():
 
         return twitter_data
     
-    def get_substack_data(self,path1,
-                          path2):
-        substack1 = pd.read_csv(path1)
-        substack2 = pd.read_csv(path2)
+    def get_substack_data(self, path1=None, path2=None, cached_data=False):
+        """
+        Retrieves the Substack data. If `cached_data=True`, loads it from `google_sheets.json`.
+        Otherwise, returns the `substack` DataFrame loaded via `get_sheets_data`.
 
-        data_struct = {
-            'substack1':substack1,
-            'substack2':substack2
-        }
+        Optionally, can also load from CSV paths `path1` and `path2` if needed.
+        """
+        if cached_data or self.use_cached_data:
+            sheets_data = self.load_data('google_sheets.json')
+            substack_df = sheets_data.get("substack")
+            return {substack_df}
 
-        return data_struct
+        if self.substack_data is not None:
+            return {self.substack_data}
+
+        if path1 and path2:
+            substack1 = pd.read_csv(path1)
+            substack2 = pd.read_csv(path2)
+
+            data_struct = {
+                'substack1': substack1,
+                'substack2': substack2
+            }
+
+            return data_struct
+
+        # Fallback: reload sheets if nothing else is available
+        sheets_data = self.get_sheets_data()
+        substack_df = sheets_data.get("substack")
+        return {substack_df}
     
     def get_submissions(self, start_date, end_date):
         # Use the current directory as the base if submission_directory is not provided
